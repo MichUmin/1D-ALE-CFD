@@ -9,6 +9,8 @@
 #define OUT
 #define INOUT
 
+extern double reconstruction_polynomials[NUM_CELLS + 2*NUM_GHOST_CELLS][NUM_VARIABLES][SPACE_ORDER];
+
 double minbee(double ratio) {
     if (ratio <= 0.0) {
         return 0.0;

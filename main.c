@@ -28,8 +28,6 @@ state field_in_cell[TIME_ORDER+1][NUM_CELLS + 2*NUM_GHOST_CELLS];
 state left_reconstructed[NUM_CELLS + 2*NUM_GHOST_CELLS];
 state right_reconstructed[NUM_CELLS + 2*NUM_GHOST_CELLS];
 
-
-
 state flux_at_node[NUM_NODES + 2*NUM_GHOST_CELLS];
 
 double cell_width(double nodes[NUM_NODES + 2*NUM_GHOST_CELLS], int index) {
@@ -42,14 +40,18 @@ double cell_width(double nodes[NUM_NODES + 2*NUM_GHOST_CELLS], int index) {
 double pressure(state S) {
     double rho = S[0];
     #ifdef DEBUG
-         assert(rho > 0.0);
+        assert(rho > 0.0);
     #endif
     double v = S[1]/rho;
     double rhoEpsilon = S[NUM_VARIABLES-1] - 0.5*v*S[1];
     #ifdef DEBUG
         assert(rhoEpsilon > 0.0);
+        // if (rhoEpsilon <= 0.0) {
+        //     printf("rhoEpsilon <= 0.0\n");
+        // }
     #endif
     double p = (GAMMA - 1)*rhoEpsilon;
+    // if (p <= 0.0) {return 0.0;}
     return p;
 }
 
@@ -60,7 +62,7 @@ double speed_of_sound(state S) {
     #endif
     double p = pressure(S);
     #ifdef DEBUG
-        assert(p > 0.0);
+        assert(p >= 0.0);
     #endif
     return sqrt(GAMMA*(p/rho));
 }
@@ -149,6 +151,15 @@ double find_dt(state current_values[NUM_CELLS + 2*NUM_GHOST_CELLS], double curre
             guilty_cell = i;
         }
     }
+    for (int i = NUM_GHOST_CELLS; i < (NUM_CELLS + NUM_GHOST_CELLS); i++) {
+        double dx = cell_width(current_positions, i);
+        double node_v = fabs(node_velocity[i+1] - node_velocity[i]);
+        double local_dt = (0.5*dx) / node_v;
+        if (local_dt < result) {
+            result = local_dt;
+            printf("dt due to crushed cell\n");
+        }
+    }
     // printf("dt due to cell %d\n", guilty_cell);
     return result;
 }
@@ -174,12 +185,12 @@ void reconstruct(state in_the_middle[NUM_CELLS + 2*NUM_GHOST_CELLS], double node
             double dx_power = dx;
             for (int k = 1; k < SPACE_ORDER; k++) {
                 right_reconstructed[i][j] += dx_power*reconstruction_polynomials[i][j][k];
-                if ((k % 2) == 0) {
-                    left_reconstructed[i][j] += dx_power*reconstruction_polynomials[i][j][k];
-                } else {
-                    left_reconstructed[i][j] -= dx_power*reconstruction_polynomials[i][j][k];
-                }
                 dx_power *= dx;
+            }
+            dx_power = (-1.0)*dx;
+            for (int k = 1; k < SPACE_ORDER; k++) {
+                left_reconstructed[i][j] += dx_power*reconstruction_polynomials[i][j][k];
+                dx_power *= (-1.0)*dx;
             }
         }
     }
@@ -214,9 +225,10 @@ void reconstruct(state in_the_middle[NUM_CELLS + 2*NUM_GHOST_CELLS], double node
 //     node_velocity[0] = in_the_middle[0][1]   / in_the_middle[0][0];
 // }
 
-#ifdef LAGRANGE
+
 void find_node_volocities() {
-     for (int node = 1; node < NUM_NODES + 2*NUM_GHOST_CELLS - 1; node++) {
+    #ifdef LAGRANGE
+    for (int node = 1; node < NUM_NODES + 2*NUM_GHOST_CELLS - 1; node++) {
          double rhoLeft = right_reconstructed[node-1][0];
          double rhoRight = left_reconstructed[node][0];
          #ifdef DEBUG
@@ -229,25 +241,25 @@ void find_node_volocities() {
          double sqrtLeft = sqrt(rhoLeft);
          double sqrtRight = sqrt(rhoRight);
          node_velocity[node] = (sqrtLeft*vLeft + sqrtRight*vRight) / (sqrtLeft + sqrtRight);
-     }
-     int last_node = NUM_NODES + 2*NUM_GHOST_CELLS - 1;
-     int last_cell = last_node - 1;
-     #ifdef DEBUG
+    }
+    int last_node = NUM_NODES + 2*NUM_GHOST_CELLS - 1;
+    int last_cell = last_node - 1;
+    #ifdef DEBUG
          assert(right_reconstructed[last_cell][0] > 0.0);
          assert(left_reconstructed[0][0] > 0.0);
-     #endif
-     node_velocity[last_node] = right_reconstructed[last_cell][1]  / right_reconstructed[last_cell][0];
-     node_velocity[0] = left_reconstructed[0][1]   / left_reconstructed[0][0];
-}
-#endif
+    #endif
+    node_velocity[last_node] = right_reconstructed[last_cell][1]  / right_reconstructed[last_cell][0];
+    node_velocity[0] = left_reconstructed[0][1]   / left_reconstructed[0][0];
 
-#ifdef EULER
-    void find_node_volocities() {
+    #else
+    #ifdef EULER
         for (int node = 0; node < NUM_NODES + 2*NUM_GHOST_CELLS; node++) {
             node_velocity[node] = 0.0;
         }
-    }
-#endif
+    #endif
+    #endif
+}
+
 
 void compute_fluxes() {
     for (int node = 1; node < (NUM_NODES + 2*NUM_GHOST_CELLS - 1); node++) {
@@ -317,21 +329,16 @@ void integrate(IN double polynomial[NUM_VARIABLES][SPACE_ORDER], IN double left,
 }
 
 void project_back() {
-    bool do_remap = false;
-    for (int node = 0; node < (NUM_NODES + 2*NUM_GHOST_CELLS); node++) {
-        if (node_position[0][node] != node_position[TIME_ORDER][node]) {
-            do_remap = true;
+    #ifndef REMAP
+        for (int node = 0; node < (NUM_NODES + 2*NUM_GHOST_CELLS); node++) {
+            node_position[0][node] = node_position[TIME_ORDER][node];
         }
-    }
-    if (!do_remap) {
-        // printf("No remap\n");
         for (int cell = 0; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS); cell++) {
             for (int var = 0; var < NUM_VARIABLES; var++) {
                 field_in_cell[0][cell][var] = field_in_cell[TIME_ORDER][cell][var];
             }
         }
-    } else {
-        // printf("Doing remap\n");
+    #else
         find_reconstruction_polynomial(field_in_cell[TIME_ORDER], node_position[TIME_ORDER]);
         for (int new_cell = 1; new_cell < (NUM_CELLS + 2*NUM_GHOST_CELLS - 1); new_cell++) {
             double new_left = node_position[0][new_cell];
@@ -403,7 +410,7 @@ void project_back() {
             field_in_cell[0][0][var] = field_in_cell[TIME_ORDER][0][var];
             field_in_cell[0][last_cell][var] = field_in_cell[TIME_ORDER][last_cell][var];
         }
-    }
+    #endif
 }
 
 
@@ -541,7 +548,7 @@ int main(void) {
     double TimeStep;
     double currentTime = Tstart;
     int step = 1;
-    while ((currentTime < Tend) && (step < 100000)) {
+    while ((currentTime < Tend) && (step < 10000)) {
         TimeStep = find_dt(field_in_cell[0], node_position[0]);
         if ((currentTime + TimeStep) > Tend) {
             TimeStep = Tend - currentTime;
@@ -549,7 +556,7 @@ int main(void) {
         printf("step %d, dt = %lf\n", step, TimeStep);
         time_advance(TimeStep);
         // printf("Time advancement done in step %d\n", step);
-        print_result(field_in_cell[0], node_position[0]);
+        // print_result(field_in_cell[0], node_position[0]);
         currentTime += TimeStep;
         step++;
     }

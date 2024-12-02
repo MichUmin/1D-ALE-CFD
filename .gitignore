@@ -2,4 +2,9 @@
 *.exe
 *.txt
 *.dat
+*.xml
+*.json
 .ipynb_checkpoints
+.idea
+cmake-build-debug
+Agent
