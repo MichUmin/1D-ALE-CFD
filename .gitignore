@@ -1,3 +1,5 @@
 *.o
 *.exe
 *.txt
+*.dat
+.ipynb_checkpoints
