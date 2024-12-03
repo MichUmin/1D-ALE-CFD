@@ -216,10 +216,11 @@ void find_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*NUM_GHOS
 
             FindPolynomials(field_values + template_start, node_positions + template_start, main_centre, IntermediatePolynomials[template_num]);
 
-            double smoothness_here = 0.0;
-            for (int var = 0; var < NUM_VARIABLES; var++) {
-                smoothness_here = max(smoothness_here, SmoothnessIndicator(IntermediatePolynomials[template_num][var], main_width));
-            }
+            // double smoothness_here = 0.0;
+            // for (int var = 0; var < NUM_VARIABLES; var++) {
+            //     smoothness_here = max(smoothness_here, SmoothnessIndicator(IntermediatePolynomials[template_num][var], main_width));
+            // }
+            double smoothness_here = SmoothnessIndicator(IntermediatePolynomials[template_num][NUM_VARIABLES-1], main_width);
             Weights[template_num] = Weights[template_num] / power((smoothness_here + EPSILON), 4);
         }
         double weight_sum = 0.0;

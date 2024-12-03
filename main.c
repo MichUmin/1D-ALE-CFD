@@ -15,7 +15,7 @@
 double Tstart, Tend;
 
 #define GAMMA 1.4
-#define CFL 0.005
+#define CFL 0.25
 
 double reconstruction_polynomials[NUM_CELLS + 2*NUM_GHOST_CELLS][NUM_VARIABLES][SPACE_ORDER];
 
@@ -284,10 +284,12 @@ void compute_fluxes() {
         // printf("Flux at node %d done\n", node);
     }
     int last_node = NUM_NODES + 2*NUM_GHOST_CELLS - 1;
-    for (int var=0; var < NUM_VARIABLES; var++) {
-        flux_at_node[0][var] = flux_at_node[1][var];
-        flux_at_node[last_node][var] = flux_at_node[last_node-1][var];
-    }
+    // for (int var=0; var < NUM_VARIABLES; var++) {
+    //     flux_at_node[0][var] = flux_at_node[1][var];
+    //     flux_at_node[last_node][var] = flux_at_node[last_node-1][var];
+    // }
+    physical_lagrnge_flux(left_reconstructed[0], node_velocity[0], flux_at_node[0]);
+    physical_lagrnge_flux(right_reconstructed[last_node-1], node_velocity[last_node], flux_at_node[last_node]);
 }
 
 void single_update(IN state field_old[NUM_CELLS + 2*NUM_GHOST_CELLS], IN double node_old[NUM_NODES + 2*NUM_GHOST_CELLS], IN double dt, OUT state field_new[NUM_CELLS + 2*NUM_GHOST_CELLS], OUT double node_new[NUM_NODES + 2*NUM_GHOST_CELLS]) {
