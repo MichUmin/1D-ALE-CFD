@@ -92,29 +92,44 @@ void wavespeed_estimate(IN state StateLeft, IN state StateRight, OUT double * sL
 //     *sLeft = fmin(vLeft - cLeft, vRight - cRight);
 // }
 
-void physical_lagrnge_flux(IN state input, IN double node_v, OUT state result) {
-    double rho = input[0];
-    double v = input[1]/rho;
-    double p = pressure(input);
-    result[0] = rho*(v - node_v);
-    result[1] = input[1]*(v - node_v) + p;
-    result[NUM_VARIABLES-1] = input[NUM_VARIABLES-1]*(v - node_v) + p*v;
+void physical_flux(IN state input, IN double node_v, OUT state result) {
+    #ifdef EULER_FLUX
+        double rho = input[0];
+        double v = input[1]/rho;
+        double p = pressure(input);
+        result[0] = 0.0;
+        result[1] = p;
+        result[NUM_VARIABLES-1] = p*v;
+    #else
+        double rho = input[0];
+        double v = input[1]/rho;
+        double p = pressure(input);
+        result[0] = rho*(v - node_v);
+        result[1] = input[1]*(v - node_v) + p;
+        result[NUM_VARIABLES-1] = input[NUM_VARIABLES-1]*(v - node_v) + p*v;
+    #endif
 }
 
 // void FORCE_flux(IN state Sleft, IN state Sright, IN double node_v, IN double dt, IN double dx, OUT state result) {
 //     state Fleft, Fright, intermediate, Richtmyer;
-//     physical_lagrnge_flux(Sleft, node_v, Fleft);
-//     physical_lagrnge_flux(Sright, node_v, Fright);
+//     physical_flux(Sleft, node_v, Fleft);
+//     physical_flux(Sright, node_v, Fright);
 //     for (int i = 0; i < NUM_VARIABLES; i++) {
 //         intermediate[i] = 0.5 *(Sleft[i] + Sright[i]);
 //         intermediate[i] -= 0.5 * (dt/dx) * (Fright[i] - Fleft[i]);
 //     }
-//     physical_lagrnge_flux(intermediate, node_v, Richtmyer);
+//     physical_flux(intermediate, node_v, Richtmyer);
 //     for (int i = 0; i < NUM_VARIABLES; i++) {
 //         result[i] = 0.5*Richtmyer[i];
 //         result[i] += 0.25*((dx/dt)*(Sleft[i] - Sright[i]) + Fleft[i] + Fright[i]);
 //     }
 // }
+
+#ifdef HLLC
+#define NUMERICAL_FLUX HLLC_flux
+#else
+#define NUMERICAL_FLUX HLL_flux
+#endif
 
 void HLL_flux(IN state StateLeft, IN state StateRight, IN double node_v, OUT state result) {
     double sLeft, sRight;
@@ -123,17 +138,79 @@ void HLL_flux(IN state StateLeft, IN state StateRight, IN double node_v, OUT sta
         assert(sRight > sLeft);
     #endif
     if (node_v >= sRight) {
-        physical_lagrnge_flux(StateRight, node_v, result);
+        physical_flux(StateRight, node_v, result);
     } else {
         if (node_v <= sLeft) {
-            physical_lagrnge_flux(StateLeft, node_v, result);
+            physical_flux(StateLeft, node_v, result);
         } else {
             state FLeft, FRight;
-            physical_lagrnge_flux(StateLeft, node_v, FLeft);
-            physical_lagrnge_flux(StateRight, node_v, FRight);
+            physical_flux(StateLeft, node_v, FLeft);
+            physical_flux(StateRight, node_v, FRight);
             for (int i = 0; i < NUM_VARIABLES; i++) {
                 result[i] = (sRight*FLeft[i] - sLeft*FRight[i] + sLeft*sRight*(StateRight[i] - StateLeft[i])) / (sRight - sLeft);
             }
+        }
+    }
+}
+
+void HLLC_flux(IN state StateLeft, IN state StateRight, IN double node_v, OUT state result) {
+    double sLeft, sRight, sStar;
+    wavespeed_estimate(StateLeft, StateRight, &sLeft, &sRight);
+    #ifdef DEBUG
+        assert(sRight > sLeft);
+    #endif
+    double pLeft = pressure(StateLeft);
+    double pRight = pressure(StateRight);
+    double rhoLeft = StateLeft[0];
+    double rhoRight = StateRight[0];
+    double rhoVLeft = StateLeft[1];
+    double rhoVRight = StateRight[1];
+    #ifdef DEBUG
+        assert(rhoLeft > 0.0);
+        assert(rhoRight > 0.0);
+    #endif
+    double VLeft = rhoVLeft / rhoLeft;
+    double VRight = rhoVRight / rhoRight;
+
+    sStar = pRight - pLeft;
+    sStar += rhoVLeft*(sLeft - VLeft);
+    sStar -= rhoVRight*(sRight - VRight);
+    sStar /= (rhoLeft*(sLeft - VLeft) - rhoRight*(sRight - VRight));
+
+    if (node_v >= sRight) {
+        physical_flux(StateRight, node_v, result);
+    } else {
+        if (node_v <= sLeft) {
+            physical_flux(StateLeft, node_v, result);
+        } else {
+            // one of the intermedite states
+            if (node_v <= sStar) {
+                // F*left
+                state FLeft, UStar;
+                physical_flux(StateLeft, node_v, FLeft);
+                double state_prefix = rhoLeft*((sLeft - VLeft)/(sLeft - sStar));
+                UStar[0] = 1.0 * state_prefix;
+                UStar[1] = sStar * state_prefix;
+                UStar[2] = StateLeft[2] / StateLeft[0];
+                UStar[2] += (sStar - VLeft)*(sStar + (pLeft/(rhoLeft*(sLeft - VLeft))));
+                UStar[2] *= state_prefix;
+                for (int i = 0; i < NUM_VARIABLES; i++) {
+                    result[i] = FLeft[i] + (sLeft*(UStar[i] - StateLeft[i]));
+                }
+            } else {
+                // F*right
+                state FRight, UStar;
+                physical_flux(StateRight, node_v, FRight);
+                double state_prefix = rhoLeft*((sRight - VRight)/(sRight - sStar));
+                UStar[0] = 1.0 * state_prefix;
+                UStar[1] = sStar * state_prefix;
+                UStar[2] = StateRight[2] / StateRight[0];
+                UStar[2] += (sStar - VRight)*(sStar + (pRight/(rhoRight*(sRight - VRight))));
+                UStar[2] *= state_prefix;
+                for (int i = 0; i < NUM_VARIABLES; i++) {
+                    result[i] = FRight[i] + (sRight*(UStar[i] - StateRight[i]));
+                }
+            } 
         }
     }
 }
@@ -280,7 +357,7 @@ void find_node_volocities() {
 
 void compute_fluxes() {
     for (int node = 1; node < (NUM_NODES + 2*NUM_GHOST_CELLS - 1); node++) {
-        HLL_flux(right_reconstructed[node-1], left_reconstructed[node], node_velocity[node], flux_at_node[node]);
+        NUMERICAL_FLUX(right_reconstructed[node-1], left_reconstructed[node], node_velocity[node], flux_at_node[node]);
         // printf("Flux at node %d done\n", node);
     }
     int last_node = NUM_NODES + 2*NUM_GHOST_CELLS - 1;
