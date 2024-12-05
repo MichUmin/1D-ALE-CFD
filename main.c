@@ -93,7 +93,7 @@ void wavespeed_estimate(IN state StateLeft, IN state StateRight, OUT double * sL
 // }
 
 void physical_flux(IN state input, IN double node_v, OUT state result) {
-    #ifdef EULER_FLUX
+    #ifdef LAGRANGE_FLUX
         double rho = input[0];
         double v = input[1]/rho;
         double p = pressure(input);
@@ -365,8 +365,8 @@ void compute_fluxes() {
     //     flux_at_node[0][var] = flux_at_node[1][var];
     //     flux_at_node[last_node][var] = flux_at_node[last_node-1][var];
     // }
-    physical_lagrnge_flux(left_reconstructed[0], node_velocity[0], flux_at_node[0]);
-    physical_lagrnge_flux(right_reconstructed[last_node-1], node_velocity[last_node], flux_at_node[last_node]);
+    physical_flux(left_reconstructed[0], node_velocity[0], flux_at_node[0]);
+    physical_flux(right_reconstructed[last_node-1], node_velocity[last_node], flux_at_node[last_node]);
 }
 
 void single_update(IN state field_old[NUM_CELLS + 2*NUM_GHOST_CELLS], IN double node_old[NUM_NODES + 2*NUM_GHOST_CELLS], IN double dt, OUT state field_new[NUM_CELLS + 2*NUM_GHOST_CELLS], OUT double node_new[NUM_NODES + 2*NUM_GHOST_CELLS]) {
