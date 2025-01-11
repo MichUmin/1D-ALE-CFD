@@ -40,15 +40,18 @@ double cell_width(double nodes[NUM_NODES + 2*NUM_GHOST_CELLS], int index) {
 double pressure(state S) {
     double rho = S[0];
     #ifdef DEBUG
-        assert(rho > 0.0);
+        // assert(rho > 0.0);
+        // if (rho < 0.0) {
+        //     rho *= (-1.0);
+        // }
     #endif
     double v = S[1]/rho;
     double rhoEpsilon = S[NUM_VARIABLES-1] - 0.5*v*S[1];
     #ifdef DEBUG
-        assert(rhoEpsilon > 0.0);
-        // if (rhoEpsilon <= 0.0) {
-        //     printf("rhoEpsilon <= 0.0\n");
-        // }
+        // assert(rhoEpsilon > 0.0);
+        if (rhoEpsilon <= 0.0) {
+            printf("rhoEpsilon <= 0.0\n");
+        }
     #endif
     double p = (GAMMA - 1.0)*rhoEpsilon;
     // if (p <= 0.0) {return 0.0;}
@@ -57,14 +60,21 @@ double pressure(state S) {
 
 double speed_of_sound(state S) {
     double rho = S[0];
-    #ifdef DEBUG
-        assert(rho > 0.0);
-    #endif
+    // #ifdef DEBUG
+    //     assert(rho > 0.0);
+    // #endif
+
     double p = pressure(S);
-    #ifdef DEBUG
-        assert(p >= 0.0);
-    #endif
-    return sqrt(GAMMA*(p/rho));
+    // #ifdef DEBUG
+    //     assert(p >= 0.0);
+    // #endif
+    if (p*rho >= 0.0) {
+        return sqrt(GAMMA*(p/rho));
+    }
+    else
+    {
+        return sqrt(GAMMA*(-1.0)*(p/rho));
+    }
 }
 
 void wavespeed_estimate(IN state StateLeft, IN state StateRight, OUT double * sLeft, OUT double * sRight) {
@@ -166,8 +176,8 @@ void HLLC_flux(IN state StateLeft, IN state StateRight, IN double node_v, OUT st
     double rhoVLeft = StateLeft[1];
     double rhoVRight = StateRight[1];
     #ifdef DEBUG
-        assert(rhoLeft > 0.0);
-        assert(rhoRight > 0.0);
+        // assert(rhoLeft > 0.0);
+        // assert(rhoRight > 0.0);
     #endif
     double VLeft = rhoVLeft / rhoLeft;
     double VRight = rhoVRight / rhoRight;

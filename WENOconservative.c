@@ -15,7 +15,8 @@ extern double reconstruction_polynomials[NUM_CELLS + 2*NUM_GHOST_CELLS][NUM_VARI
 
 double Matrix[SPACE_ORDER][SPACE_ORDER];
 
-#define EPSILON 0.000001
+#define EPSILON 0.00001
+#define MY_INF 1.0e20
 
 double square(double x) {
     return x*x;
@@ -146,6 +147,10 @@ double SmoothnessIndicator(double polynomial[SPACE_ORDER], double width) {
         result += square(width) * square(polynomial[1]);
         result += 0.5 * power(width, 4) * polynomial[1] * polynomial[3];
         #ifdef DEBUG
+            if (!(result >= 0.0)) {
+                printf("smoothness indicator error: %f\n", result);
+                printf("\n");
+            }    
             assert(result >= 0.0);
         #endif
         return result;
@@ -181,6 +186,7 @@ double SmoothnessIndicator(double polynomial[SPACE_ORDER], double width) {
 
 
 void find_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*NUM_GHOST_CELLS], IN double node_positions[NUM_NODES + 2*NUM_GHOST_CELLS]) {
+// shared weights   
     double IntermediatePolynomials[SPACE_ORDER][NUM_VARIABLES][SPACE_ORDER];
     double Weights[SPACE_ORDER];
 
@@ -221,20 +227,32 @@ void find_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*NUM_GHOS
                 smoothness_here = max(smoothness_here, SmoothnessIndicator(IntermediatePolynomials[template_num][var], main_width));
             }
             // double smoothness_here = SmoothnessIndicator(IntermediatePolynomials[template_num][NUM_VARIABLES-1], main_width);
-            Weights[template_num] = Weights[template_num] / power((smoothness_here + EPSILON), 4);
+            // printf("smoothness indicator: %f ", smoothness_here);
+            if (smoothness_here > EPSILON)
+            {
+                Weights[template_num] = Weights[template_num] / power(smoothness_here, 8);
+            }
+            else
+            {
+                Weights[template_num] = MY_INF;
+            }
+            
         }
+        // printf("\n");
         double weight_sum = 0.0;
         for (int template_num = 0; template_num < SPACE_ORDER; template_num++) {
             weight_sum += Weights[template_num];
         }
         for (int template_num = 0; template_num < SPACE_ORDER; template_num++) {
             Weights[template_num] /= weight_sum;
+            // printf("weight: %f ", Weights[template_num]);
             for (int var = 0; var < NUM_VARIABLES; var++) {
                 for (int ord = 0; ord < SPACE_ORDER; ord++) {
                     reconstruction_polynomials[cell][var][ord] += Weights[template_num]*IntermediatePolynomials[template_num][var][ord];
                 }
             }
         }
+        // printf("\n");
     }
     for (int cell = 0; cell < (SPACE_ORDER -1); cell++) {
         for (int var = 0; var < NUM_VARIABLES; var++) {
@@ -253,6 +271,89 @@ void find_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*NUM_GHOS
         }
     }
 }
+
+/*
+void find_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*NUM_GHOST_CELLS], IN double node_positions[NUM_NODES + 2*NUM_GHOST_CELLS]) {
+// individual weights    
+    double IntermediatePolynomials[SPACE_ORDER][NUM_VARIABLES][SPACE_ORDER];
+    double Weights[SPACE_ORDER];
+
+    for (int cell = (SPACE_ORDER-1); cell <= (NUM_CELLS + 2*NUM_GHOST_CELLS - SPACE_ORDER); cell++) {
+        // printf("WENO cell %d\n", cell);
+        for (int var = 0; var < NUM_VARIABLES; var++) {
+            for (int order = 0; order < SPACE_ORDER; order++) {
+                reconstruction_polynomials[cell][var][order] = 0.0;
+            }
+        }
+        double main_centre = 0.5*(node_positions[cell] + node_positions[cell+1]);
+        double main_width = node_positions[cell+1] - node_positions[cell];
+        #if (SPACE_ORDER == 2)
+            Weights[0] = 0.5;
+            Weights[1] = 0.5;
+        #elif (SPACE_ORDER == 3)
+            Weights[0] = 0.025;
+            Weights[1] = 0.95;
+            Weights[2] = 0.025;
+        #elif (SPACE_ORDER == 4)
+            Weights[0] = 0.025;
+            Weights[1] = 0.475;
+            Weights[2] = 0.475;
+            Weights[3] = 0.025;
+        #else
+            printf("TBD higher order WENO");
+            abort();
+        #endif
+
+        for (int template_num = 0; template_num < SPACE_ORDER; template_num++) {
+            // printf("WENO template %d\n", template_num);
+            int template_start = cell - (SPACE_ORDER - 1) + template_num;
+
+            FindPolynomials(field_values + template_start, node_positions + template_start, main_centre, IntermediatePolynomials[template_num]);
+        }
+        for (int var = 0; var < NUM_VARIABLES; var++) {
+            printf("var %d ", var);
+            double weight_sum = 0.0;
+            for (int template_num = 0; template_num < SPACE_ORDER; template_num++) {
+                double smoothness_here = SmoothnessIndicator(IntermediatePolynomials[template_num][var], main_width);
+                printf("SI: %f ", smoothness_here);
+                if (smoothness_here > EPSILON)
+                {
+                    Weights[template_num] = Weights[template_num] / power(smoothness_here, 8);
+                }
+                else
+                {
+                    Weights[template_num] = MY_INF;
+                }
+                weight_sum += Weights[template_num];
+            }
+            for (int template_num = 0; template_num < SPACE_ORDER; template_num++) {
+                Weights[template_num] = Weights[template_num] / weight_sum;
+                for (int ord = 0; ord < SPACE_ORDER; ord++) {
+                    reconstruction_polynomials[cell][var][ord] += Weights[template_num]*IntermediatePolynomials[template_num][var][ord];
+                }
+            }    
+        }
+        printf("\n");    
+    }
+
+    for (int cell = 0; cell < (SPACE_ORDER -1); cell++) {
+        for (int var = 0; var < NUM_VARIABLES; var++) {
+            reconstruction_polynomials[cell][var][0] = field_values[cell][var];
+            for (int order = 1; order < SPACE_ORDER; order++) {
+                reconstruction_polynomials[cell][var][order] = 0.0;
+            }
+        }
+    }
+    for (int cell = (NUM_CELLS + 2*NUM_GHOST_CELLS - SPACE_ORDER + 1); cell < (NUM_CELLS + 2*NUM_GHOST_CELLS); cell++) {
+        for (int var = 0; var < NUM_VARIABLES; var++) {
+            reconstruction_polynomials[cell][var][0] = field_values[cell][var];
+            for (int order = 1; order < SPACE_ORDER; order++) {
+                reconstruction_polynomials[cell][var][order] = 0.0;
+            }
+        }
+    }
+}
+*/
 
 
 
