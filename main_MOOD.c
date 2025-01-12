@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 #include "global.h"
-#include "polynomial_reconstruction.h"
+#include "MOOD_polynomial_reconstruction.h"
 
 #define IN
 #define OUT
@@ -29,6 +29,13 @@ state left_reconstructed[NUM_CELLS + 2*NUM_GHOST_CELLS];
 state right_reconstructed[NUM_CELLS + 2*NUM_GHOST_CELLS];
 
 state flux_at_node[NUM_NODES + 2*NUM_GHOST_CELLS];
+
+bool do_reconstruction[NUM_NODES + 2*NUM_GHOST_CELLS];
+bool do_update[NUM_NODES + 2*NUM_GHOST_CELLS];
+
+#define NUM_MOOD_LEVELS 3
+int MOOD_orders[NUM_MOOD_LEVELS] = {SPACE_ORDER, 2, 1};
+
 
 bool isNaN(double x)
 {
@@ -534,7 +541,7 @@ void project_back() {
     #endif
 }
 
-
+/*
 void single_step(IN state field_old[NUM_CELLS + 2*NUM_GHOST_CELLS], IN double node_old[NUM_NODES + 2*NUM_GHOST_CELLS], IN double dt, OUT state field_new[NUM_CELLS + 2*NUM_GHOST_CELLS], OUT double node_new[NUM_NODES + 2*NUM_GHOST_CELLS]) {
     find_reconstruction_polynomial(field_old, node_old);
     reconstruct(field_old, node_old);
@@ -549,6 +556,7 @@ void single_step(IN state field_old[NUM_CELLS + 2*NUM_GHOST_CELLS], IN double no
     // printf("Single update done\n");
     project_back();
 }
+*/
 
 void check_solution(IN state field_values[NUM_CELLS + 2*NUM_GHOST_CELLS], OUT bool valid[NUM_CELLS + 2*NUM_GHOST_CELLS]) {
     
@@ -587,33 +595,30 @@ void check_solution(IN state field_values[NUM_CELLS + 2*NUM_GHOST_CELLS], OUT bo
 
 void time_advance(double dt) {
     if (TIME_ORDER == 1) {
-        single_step(field_in_cell[0], node_position[0], dt, field_in_cell[1], node_position[1]);
-    } else if (TIME_ORDER == 2) {
-        // RK2
-        find_reconstruction_polynomial(field_in_cell[0], node_position[0]);
-        reconstruct(field_in_cell[0], node_position[0]);
-        // printf("1st reconstruction done\n");
-        find_node_volocities();
-        compute_fluxes();
-        // printf("1st fluxes done\n");
-        // for (int cell = 0; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS); cell++) {
-        //     widths[cell] = node_position[0][cell+1] - node_position[0][cell];
-        // }
-        single_update(field_in_cell[0], node_position[0], 0.5*dt, field_in_cell[1], node_position[1]);
-        // printf("1st single update done\n");
-
-        find_reconstruction_polynomial(field_in_cell[1], node_position[1]);
-        reconstruct(field_in_cell[1], node_position[1]);
-        // printf("2nd reconstruction done\n");
-        find_node_volocities();
-        compute_fluxes();
-        // printf("2nd fluxes done\n");
-        // for (int cell = 0; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS); cell++) {
-        //     widths[cell] = node_position[1][cell+1] - node_position[1][cell];
-        // }
-        single_update(field_in_cell[0], node_position[0], dt, field_in_cell[2], node_position[2]);
-        // printf("2nd single update done\n");
-
+        for (int cell = 0; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS); cell++)
+        {
+            do_reconstruction[cell] = true;
+            do_update[cell] = true;
+        }
+        for (int level = 0; level < NUM_MOOD_LEVELS; level++) {
+            int level_order = MOOD_orders[level];
+            find_reconstruction_polynomial(field_in_cell[0], node_position[0], level_order);
+            reconstruct(field_in_cell[0], node_position[0]);
+            find_node_volocities();
+            compute_fluxes();
+            single_update(field_in_cell[0], node_position[0], dt, field_in_cell[1], node_position[1]);
+            if (level < NUM_MOOD_LEVELS-1) {
+                check_solution(field_in_cell[1], do_reconstruction);
+                for (int cell = 1; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS -1); cell++)
+                {
+                    if (do_reconstruction[cell]) {
+                        do_update[cell-1]=true;
+                        do_update[cell] = true;
+                        do_update[cell+1]=true;
+                    }
+                }
+            }
+        }
         project_back();
     } else {
         printf("TBD: higher order in time\n");
