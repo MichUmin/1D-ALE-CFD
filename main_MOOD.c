@@ -32,6 +32,7 @@ state flux_at_node[NUM_NODES + 2*NUM_GHOST_CELLS];
 
 bool do_reconstruction[NUM_NODES + 2*NUM_GHOST_CELLS];
 bool do_update[NUM_NODES + 2*NUM_GHOST_CELLS];
+bool solution_valid[NUM_NODES + 2*NUM_GHOST_CELLS];
 
 #define NUM_MOOD_LEVELS 3
 int MOOD_orders[NUM_MOOD_LEVELS] = {SPACE_ORDER, 2, 1};
@@ -61,9 +62,9 @@ double pressure(state S) {
     double rhoEpsilon = S[NUM_VARIABLES-1] - 0.5*v*S[1];
     #ifdef DEBUG
         // assert(rhoEpsilon > 0.0);
-        if (rhoEpsilon <= 0.0) {
-            printf("rhoEpsilon <= 0.0\n");
-        }
+        // if (rhoEpsilon <= 0.0) {
+        //     printf("rhoEpsilon <= 0.0\n");
+        // }
     #endif
     double p = (GAMMA - 1.0)*rhoEpsilon;
     // if (p <= 0.0) {return 0.0;}
@@ -75,18 +76,12 @@ double speed_of_sound(state S) {
     // #ifdef DEBUG
     //     assert(rho > 0.0);
     // #endif
-
     double p = pressure(S);
     // #ifdef DEBUG
     //     assert(p >= 0.0);
     // #endif
-    if (p*rho >= 0.0) {
-        return sqrt(GAMMA*(p/rho));
-    }
-    else
-    {
-        return sqrt(GAMMA*(-1.0)*(p/rho));
-    }
+    return sqrt(GAMMA*(p/rho));
+
 }
 
 void wavespeed_estimate(IN state StateLeft, IN state StateRight, OUT double * sLeft, OUT double * sRight) {
@@ -157,7 +152,13 @@ void HLL_flux(IN state StateLeft, IN state StateRight, IN double node_v, OUT sta
     double sLeft, sRight;
     wavespeed_estimate(StateLeft, StateRight, &sLeft, &sRight);
     #ifdef DEBUG
-        assert(sRight > sLeft);
+        // assert(sRight > sLeft);
+        if (sRight < sLeft) {
+            for (int var=0; var < NUM_VARIABLES; var++) {
+                result[var] = NAN;
+            }
+            return;
+        }
     #endif
     if (node_v >= sRight) {
         physical_flux(StateRight, node_v, result);
@@ -178,9 +179,14 @@ void HLL_flux(IN state StateLeft, IN state StateRight, IN double node_v, OUT sta
 void HLLC_flux(IN state StateLeft, IN state StateRight, IN double node_v, OUT state result) {
     double sLeft, sRight, sStar;
     wavespeed_estimate(StateLeft, StateRight, &sLeft, &sRight);
-    #ifdef DEBUG
-        assert(sRight > sLeft);
-    #endif
+
+    if (sRight < sLeft) {
+        for (int var=0; var < NUM_VARIABLES; var++) {
+            result[var] = NAN;
+        }
+        return;
+    }
+
     double pLeft = pressure(StateLeft);
     double pRight = pressure(StateRight);
     double rhoLeft = StateLeft[0];
@@ -198,6 +204,13 @@ void HLLC_flux(IN state StateLeft, IN state StateRight, IN double node_v, OUT st
     sStar += rhoVLeft*(sLeft - VLeft);
     sStar -= rhoVRight*(sRight - VRight);
     sStar /= (rhoLeft*(sLeft - VLeft) - rhoRight*(sRight - VRight));
+
+    if ((sStar < sLeft)||(sRight < sStar)) {
+        for (int var=0; var < NUM_VARIABLES; var++) {
+            result[var] = NAN;
+        }
+        return;
+    }
 
     if (node_v >= sRight) {
         physical_flux(StateRight, node_v, result);
@@ -275,20 +288,22 @@ double find_dt(state current_values[NUM_CELLS + 2*NUM_GHOST_CELLS], double curre
 
 void reconstruct(state in_the_middle[NUM_CELLS + 2*NUM_GHOST_CELLS], double nodes[NUM_NODES + 2*NUM_GHOST_CELLS]) {
     for (int i = NUM_GHOST_CELLS; i < (NUM_CELLS+NUM_GHOST_CELLS); i++) {
-        double length = cell_width(nodes, i);
-        double dx = 0.5*length;
-        for (int var = 0; var < NUM_VARIABLES; var++) {
-            left_reconstructed[i][var] = 0.0;
-            right_reconstructed[i][var] = 0.0;
-            double dx_power = 1.0;
-            for (int k = 0; k < SPACE_ORDER; k++) {
-                right_reconstructed[i][var] += dx_power*reconstruction_polynomials[i][var][k];
-                dx_power *= dx;
-            }
-            dx_power = 1.0;
-            for (int k = 0; k < SPACE_ORDER; k++) {
-                left_reconstructed[i][var] += dx_power*reconstruction_polynomials[i][var][k];
-                dx_power *= (-1.0)*dx;
+        if (do_reconstruction[i]) {
+            double length = cell_width(nodes, i);
+            double dx = 0.5*length;
+            for (int var = 0; var < NUM_VARIABLES; var++) {
+                left_reconstructed[i][var] = 0.0;
+                right_reconstructed[i][var] = 0.0;
+                double dx_power = 1.0;
+                for (int k = 0; k < SPACE_ORDER; k++) {
+                    right_reconstructed[i][var] += dx_power*reconstruction_polynomials[i][var][k];
+                    dx_power *= dx;
+                }
+                dx_power = 1.0;
+                for (int k = 0; k < SPACE_ORDER; k++) {
+                    left_reconstructed[i][var] += dx_power*reconstruction_polynomials[i][var][k];
+                    dx_power *= (-1.0)*dx;
+                }
             }
         }
     }
@@ -330,18 +345,20 @@ void reconstruct(state in_the_middle[NUM_CELLS + 2*NUM_GHOST_CELLS], double node
 void find_node_volocities() {
     #ifdef LAGRANGE
     for (int node = 1; node < NUM_NODES + 2*NUM_GHOST_CELLS - 1; node++) {
-         double rhoLeft = right_reconstructed[node-1][0];
-         double rhoRight = left_reconstructed[node][0];
-         #ifdef DEBUG
-                 assert(rhoLeft > 0.0);
-                 assert(rhoRight > 0.0);
-         #endif
+        if (do_reconstruction[node] || do_reconstruction[node -1]) {
+            double rhoLeft = right_reconstructed[node-1][0];
+            double rhoRight = left_reconstructed[node][0];
+            #ifdef DEBUG
+                    assert(rhoLeft > 0.0);
+                    assert(rhoRight > 0.0);
+            #endif
 
-         double vLeft  = right_reconstructed[node-1][1] / rhoLeft;
-         double vRight = left_reconstructed[node][1]   / rhoRight;
-         double sqrtLeft = sqrt(rhoLeft);
-         double sqrtRight = sqrt(rhoRight);
-         node_velocity[node] = (sqrtLeft*vLeft + sqrtRight*vRight) / (sqrtLeft + sqrtRight);
+            double vLeft  = right_reconstructed[node-1][1] / rhoLeft;
+            double vRight = left_reconstructed[node][1]   / rhoRight;
+            double sqrtLeft = sqrt(rhoLeft);
+            double sqrtRight = sqrt(rhoRight);
+            node_velocity[node] = (sqrtLeft*vLeft + sqrtRight*vRight) / (sqrtLeft + sqrtRight);
+        }
     }
     int last_node = NUM_NODES + 2*NUM_GHOST_CELLS - 1;
     int last_cell = last_node - 1;
@@ -379,14 +396,12 @@ void find_node_volocities() {
 
 void compute_fluxes() {
     for (int node = 1; node < (NUM_NODES + 2*NUM_GHOST_CELLS - 1); node++) {
-        NUMERICAL_FLUX(right_reconstructed[node-1], left_reconstructed[node], node_velocity[node], flux_at_node[node]);
-        // printf("Flux at node %d done\n", node);
+        if (do_reconstruction[node-1] || do_reconstruction[node]) {
+            NUMERICAL_FLUX(right_reconstructed[node-1], left_reconstructed[node], node_velocity[node], flux_at_node[node]);
+            // printf("Flux at node %d done\n", node);
+        }
     }
     int last_node = NUM_NODES + 2*NUM_GHOST_CELLS - 1;
-    // for (int var=0; var < NUM_VARIABLES; var++) {
-    //     flux_at_node[0][var] = flux_at_node[1][var];
-    //     flux_at_node[last_node][var] = flux_at_node[last_node-1][var];
-    // }
     physical_flux(left_reconstructed[0], node_velocity[0], flux_at_node[0]);
     physical_flux(right_reconstructed[last_node-1], node_velocity[last_node], flux_at_node[last_node]);
 }
@@ -401,10 +416,12 @@ void single_update(IN state field_old[NUM_CELLS + 2*NUM_GHOST_CELLS], IN double 
         }
     #endif
     for (int cell = 0; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS); cell++) {
-        double old_width = node_old[cell + 1] - node_old[cell];
-        double new_width = node_new[cell + 1] - node_new[cell];
-        for (int var = 0; var < NUM_VARIABLES; var++) {
-            field_new[cell][var] = ((field_old[cell][var] * old_width) + (dt * (flux_at_node[cell][var] - flux_at_node[cell + 1][var]))) / new_width;
+        if (do_update[cell]) {
+            double old_width = node_old[cell + 1] - node_old[cell];
+            double new_width = node_new[cell + 1] - node_new[cell];
+            for (int var = 0; var < NUM_VARIABLES; var++) {
+                field_new[cell][var] = ((field_old[cell][var] * old_width) + (dt * (flux_at_node[cell][var] - flux_at_node[cell + 1][var]))) / new_width;
+            }
         }
     }
 
@@ -541,22 +558,6 @@ void project_back() {
     #endif
 }
 
-/*
-void single_step(IN state field_old[NUM_CELLS + 2*NUM_GHOST_CELLS], IN double node_old[NUM_NODES + 2*NUM_GHOST_CELLS], IN double dt, OUT state field_new[NUM_CELLS + 2*NUM_GHOST_CELLS], OUT double node_new[NUM_NODES + 2*NUM_GHOST_CELLS]) {
-    find_reconstruction_polynomial(field_old, node_old);
-    reconstruct(field_old, node_old);
-    // printf("Reconstruction done\n");
-    find_node_volocities();
-    compute_fluxes();
-    // printf("Fluxes done\n");
-    // for (int cell = 0; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS); cell++) {
-    //     widths[cell] = node_old[cell+1] - node_old[cell];
-    // }
-    single_update(field_old, node_old, dt, field_new, node_new);
-    // printf("Single update done\n");
-    project_back();
-}
-*/
 
 void check_solution(IN state field_values[NUM_CELLS + 2*NUM_GHOST_CELLS], OUT bool valid[NUM_CELLS + 2*NUM_GHOST_CELLS]) {
     
@@ -568,6 +569,7 @@ void check_solution(IN state field_values[NUM_CELLS + 2*NUM_GHOST_CELLS], OUT bo
         bool all_real = true;
         for (int var=0; var < NUM_VARIABLES; var++) {
             if (isNaN(field_values[i][var])) {
+                printf("NaN in cell %d\n", i);
                 all_real = false;
             }
         }
@@ -577,20 +579,40 @@ void check_solution(IN state field_values[NUM_CELLS + 2*NUM_GHOST_CELLS], OUT bo
         }
     
         // physical admissibility
-    
         double rho = field_values[i][0];
         double v = field_values[i][1] / rho;
         double rho_epsilon = field_values[i][NUM_VARIABLES-1] - 0.5*rho*v*v; 
         if (rho <= 0.0) { // negative rho
             valid[i] = false;
+            printf("negative rho in cell %d\n", i);
             continue;
         }  
         if (rho_epsilon <= 0.0) { // negative internal energy
             valid[i] = false;
+            printf("negative internal energy in cell %d\n", i);
             continue;
         }  
-    }
 
+        // smoothness
+        if ((i!=0) && (i != (NUM_CELLS + 2*NUM_GHOST_CELLS-1))) {
+            for (int var=0; var < NUM_VARIABLES; var++) {
+                double max = field_values[i-1][var];
+                double min = field_values[i-1][var];
+                if (field_values[i+1][var] > max) {
+                    max = field_values[i+1][var];
+                }
+                if (field_values[i+1][var] < min) {
+                    min = field_values[i+1][var];
+                }
+                if (field_values[i][var] > max) {
+                    valid[i] = false;
+                }
+                if (field_values[i+1][var] < min) {
+                    valid[i] = false;
+                }
+            }
+        }
+    }
 }
 
 void time_advance(double dt) {
@@ -600,26 +622,41 @@ void time_advance(double dt) {
             do_reconstruction[cell] = true;
             do_update[cell] = true;
         }
+        printf("num bad cells: ");
         for (int level = 0; level < NUM_MOOD_LEVELS; level++) {
             int level_order = MOOD_orders[level];
+            // printf("order: %d\n", level_order);
             find_reconstruction_polynomial(field_in_cell[0], node_position[0], level_order);
+            // printf("polynomials found\n");
             reconstruct(field_in_cell[0], node_position[0]);
+            // printf("reconstruction done\n");
             find_node_volocities();
+            // printf("velocities found\n");
             compute_fluxes();
+            // printf("fluxes computed\n");
             single_update(field_in_cell[0], node_position[0], dt, field_in_cell[1], node_position[1]);
-            if (level < NUM_MOOD_LEVELS-1) {
-                check_solution(field_in_cell[1], do_reconstruction);
-                for (int cell = 1; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS -1); cell++)
-                {
-                    if (do_reconstruction[cell]) {
-                        do_update[cell-1]=true;
-                        do_update[cell] = true;
-                        do_update[cell+1]=true;
-                    }
+            // printf("update done\n");
+            check_solution(field_in_cell[1], solution_valid);
+            int num_bad_cells = 0;
+            for (int cell = 1; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS -1); cell++)
+            {
+                if (!solution_valid[cell]) {
+                    printf("cell %d bad\n", cell);
+                    num_bad_cells++;
+                    do_reconstruction[cell] = true;
+                    do_update[cell-1] = true;
+                    do_update[cell] = true;
+                    do_update[cell+1] = true;
                 }
             }
+            printf("%d ", num_bad_cells);
+            if (level == (NUM_MOOD_LEVELS-1)) {
+                assert(num_bad_cells == 0);
+            }
         }
+        printf("\n");
         project_back();
+
     } else {
         printf("TBD: higher order in time\n");
         abort();

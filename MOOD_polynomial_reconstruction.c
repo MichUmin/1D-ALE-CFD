@@ -166,7 +166,7 @@ void find_high_order_reconstruction_polynomial(IN state field_values[NUM_CELLS +
             FindPolynomials(field_values + template_start, node_positions + template_start, main_centre, order, reconstruction_polynomials[cell]);
         }    
     }
-    for (int cell = 0; cell < (SPACE_ORDER -1); cell++) {
+    for (int cell = 0; cell < (SPACE_ORDER-1); cell++) {
         for (int var = 0; var < NUM_VARIABLES; var++) {
             reconstruction_polynomials[cell][var][0] = field_values[cell][var];
             for (int ord = 1; ord < SPACE_ORDER; ord++) {
@@ -177,8 +177,8 @@ void find_high_order_reconstruction_polynomial(IN state field_values[NUM_CELLS +
     for (int cell = (NUM_CELLS + 2*NUM_GHOST_CELLS - SPACE_ORDER + 1); cell < (NUM_CELLS + 2*NUM_GHOST_CELLS); cell++) {
         for (int var = 0; var < NUM_VARIABLES; var++) {
             reconstruction_polynomials[cell][var][0] = field_values[cell][var];
-            for (int order = 1; order < SPACE_ORDER; order++) {
-                reconstruction_polynomials[cell][var][order] = 0.0;
+            for (int ord = 1; ord < SPACE_ORDER; ord++) {
+                reconstruction_polynomials[cell][var][ord] = 0.0;
             }
         }
     }
@@ -210,14 +210,14 @@ void find_limiter_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*
                 derivativeRight[i] = (field_values[cell+1][i] - field_values[cell][i])/dxRight;
             }
             double limiter;
-            if ((derivativeLeft[NUM_VARIABLES-1] != 0.0) && (derivativeRight[NUM_VARIABLES-1] != 0.0)) {
-                double derivative_ratio = derivativeLeft[NUM_VARIABLES-1] / derivativeRight[NUM_VARIABLES-1];
+            if ((derivativeLeft[1] != 0.0) && (derivativeRight[1] != 0.0)) {
+                double derivative_ratio = derivativeLeft[1] / derivativeRight[1];
                 limiter = minbee(derivative_ratio);
             } else {
                 limiter = 0.0;
             }
             #ifdef DEBUG
-                assert((limiter >= 0.0) && (limiter <= 1.0));
+                assert(((limiter >= 0.0) && (limiter <= 1.0)) || (limiter != limiter));
             #endif
             // limiter = 0.0;
             for (int var = 0; var < NUM_VARIABLES; var++) {
@@ -227,7 +227,7 @@ void find_limiter_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*
                 double derivativeCentre = (dxRight*derivativeLeft[var] + dxLeft*derivativeRight[var]) / (dxLeft + dxRight);
                 reconstruction_polynomials[cell][var][1] = limiter * derivativeCentre;
                 reconstruction_polynomials[cell][var][0] = field_values[cell][var];
-                for (int ord=2; ord < SPACE_ORDER; ord++) {
+                for (int ord = 2; ord < SPACE_ORDER; ord++) {
                     reconstruction_polynomials[cell][var][ord] = 0.0;
                 }
             }
