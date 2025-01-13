@@ -15,7 +15,7 @@
 double Tstart, Tend;
 
 #define GAMMA 1.4
-#define CFL 0.25
+#define CFL 0.1
 
 double reconstruction_polynomials[NUM_CELLS + 2*NUM_GHOST_CELLS][NUM_VARIABLES][SPACE_ORDER];
 
@@ -40,18 +40,15 @@ double cell_width(double nodes[NUM_NODES + 2*NUM_GHOST_CELLS], int index) {
 double pressure(state S) {
     double rho = S[0];
     #ifdef DEBUG
-        // assert(rho > 0.0);
-        // if (rho < 0.0) {
-        //     rho *= (-1.0);
-        // }
+        assert(rho > 0.0);
     #endif
     double v = S[1]/rho;
     double rhoEpsilon = S[NUM_VARIABLES-1] - 0.5*v*S[1];
     #ifdef DEBUG
-        // assert(rhoEpsilon > 0.0);
-        if (rhoEpsilon <= 0.0) {
-            printf("rhoEpsilon <= 0.0\n");
-        }
+        assert(rhoEpsilon >= 0.0);
+        // if (rhoEpsilon <= 0.0) {
+        //     printf("rhoEpsilon <= 0.0\n");
+        // }
     #endif
     double p = (GAMMA - 1.0)*rhoEpsilon;
     // if (p <= 0.0) {return 0.0;}
@@ -60,21 +57,14 @@ double pressure(state S) {
 
 double speed_of_sound(state S) {
     double rho = S[0];
-    // #ifdef DEBUG
-    //     assert(rho > 0.0);
-    // #endif
-
+    #ifdef DEBUG
+        assert(rho > 0.0);
+    #endif
     double p = pressure(S);
-    // #ifdef DEBUG
-    //     assert(p >= 0.0);
-    // #endif
-    if (p*rho >= 0.0) {
-        return sqrt(GAMMA*(p/rho));
-    }
-    else
-    {
-        return sqrt(GAMMA*(-1.0)*(p/rho));
-    }
+    #ifdef DEBUG
+        assert(p >= 0.0);
+    #endif
+    return sqrt(GAMMA*(p/rho));
 }
 
 void wavespeed_estimate(IN state StateLeft, IN state StateRight, OUT double * sLeft, OUT double * sRight) {
@@ -176,8 +166,8 @@ void HLLC_flux(IN state StateLeft, IN state StateRight, IN double node_v, OUT st
     double rhoVLeft = StateLeft[1];
     double rhoVRight = StateRight[1];
     #ifdef DEBUG
-        // assert(rhoLeft > 0.0);
-        // assert(rhoRight > 0.0);
+        assert(rhoLeft > 0.0);
+        assert(rhoRight > 0.0);
     #endif
     double VLeft = rhoVLeft / rhoLeft;
     double VRight = rhoVRight / rhoRight;
@@ -604,7 +594,7 @@ void initialize() {
     #elif TEST == 3
         rhoLeft = 1.0; vLeft = 0.0; pLeft = 1000.0; rhoRight = 1.0; vRight = 0.0; pRight = 0.01; discontinuity = 0.5; Tend = 0.012;
     #elif TEST == 4
-        rhoLefty = 5.99924; vLeft = 19.5975; pLeft = 460.894; rhoRight = 5.99242; vRight = -6.19633; pRight = 46.0950; discontinuity = 0.4; Tend = 0.035;
+        rhoLeft = 5.99924; vLeft = 19.5975; pLeft = 460.894; rhoRight = 5.99242; vRight = -6.19633; pRight = 46.0950; discontinuity = 0.4; Tend = 0.035;
     #elif TEST == 5
          rhoLeft = 1.0; vLeft = -19.59745; pLeft = 1000.0; rhoRight = 1.0; vLeft = -19.59745; pRight = 0.01; discontinuity = 0.8; Tend = 0.012;
     #endif

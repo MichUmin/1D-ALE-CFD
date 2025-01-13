@@ -15,8 +15,13 @@ extern double reconstruction_polynomials[NUM_CELLS + 2*NUM_GHOST_CELLS][NUM_VARI
 
 double Matrix[SPACE_ORDER][SPACE_ORDER];
 
+<<<<<<< Updated upstream
 #define EPSILON 0.00001
 #define MY_INF 1.0e20
+=======
+#define EPSILON 0.000001
+#define MY_INFINITY 1e32
+>>>>>>> Stashed changes
 
 double square(double x) {
     return x*x;
@@ -227,6 +232,7 @@ void find_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*NUM_GHOS
                 smoothness_here = max(smoothness_here, SmoothnessIndicator(IntermediatePolynomials[template_num][var], main_width));
             }
             // double smoothness_here = SmoothnessIndicator(IntermediatePolynomials[template_num][NUM_VARIABLES-1], main_width);
+<<<<<<< Updated upstream
             // printf("smoothness indicator: %f ", smoothness_here);
             if (smoothness_here > EPSILON)
             {
@@ -237,6 +243,13 @@ void find_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*NUM_GHOS
                 Weights[template_num] = MY_INF;
             }
             
+=======
+            if (smoothness_here != 0.0) {
+                Weights[template_num] = Weights[template_num] / power(smoothness_here, 4);
+            } else {
+                Weights[template_num] = MY_INFINITY;
+            }
+>>>>>>> Stashed changes
         }
         // printf("\n");
         double weight_sum = 0.0;
