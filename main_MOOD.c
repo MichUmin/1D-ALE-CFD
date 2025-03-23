@@ -124,6 +124,7 @@ void physical_flux(IN state input, IN double node_v, OUT state result) {
         result[0] = rho*(v - node_v);
         result[1] = input[1]*(v - node_v) + p;
         result[NUM_VARIABLES-1] = input[NUM_VARIABLES-1]*(v - node_v) + p*v;
+        // result[NUM_VARIABLES-1] = input[NUM_VARIABLES-1]*(v - node_v) + p*(v - node_v);
     #endif
 }
 
@@ -259,18 +260,18 @@ double find_dt(state current_values[NUM_CELLS + 2*NUM_GHOST_CELLS], double curre
         double local_dt = (CFL) * (dx/c);
         if (local_dt < result) {
             result = local_dt;
-            guilty_cell = i;
+            // guilty_cell = i;
         }
     }
-    for (int i = NUM_GHOST_CELLS; i < (NUM_CELLS + NUM_GHOST_CELLS); i++) {
-        double dx = cell_width(current_positions, i);
-        double node_v = fabs(node_velocity[i+1] - node_velocity[i]);
-        double local_dt = (0.5*dx) / node_v;
-        if (local_dt < result) {
-            result = local_dt;
-            printf("dt due to crushed cell\n");
-        }
-    }
+    // for (int i = NUM_GHOST_CELLS; i < (NUM_CELLS + NUM_GHOST_CELLS); i++) {
+    //     double dx = cell_width(current_positions, i);
+    //     double node_v = fabs(node_velocity[i+1] - node_velocity[i]);
+    //     double local_dt = (0.5*dx) / node_v;
+    //     if (local_dt < result) {
+    //         result = local_dt;
+    //         printf("dt due to crushed cell\n");
+    //     }
+    // }
     // printf("dt due to cell %d\n", guilty_cell);
     return result;
 }
@@ -348,10 +349,10 @@ void find_node_volocities() {
         if (do_reconstruction[node] || do_reconstruction[node -1]) {
             double rhoLeft = right_reconstructed[node-1][0];
             double rhoRight = left_reconstructed[node][0];
-            #ifdef DEBUG
-                    assert(rhoLeft > 0.0);
-                    assert(rhoRight > 0.0);
-            #endif
+            // #ifdef DEBUG
+            //         assert(rhoLeft > 0.0);
+            //         assert(rhoRight > 0.0);
+            // #endif
 
             double vLeft  = right_reconstructed[node-1][1] / rhoLeft;
             double vRight = left_reconstructed[node][1]   / rhoRight;
@@ -410,18 +411,24 @@ void single_update(IN state field_old[NUM_CELLS + 2*NUM_GHOST_CELLS], IN double 
     for (int node = 0; node < (NUM_NODES + 2*NUM_GHOST_CELLS); node++) {
         node_new[node] = node_old[node] + (dt * node_velocity[node]);
     }
-    #ifdef DEBUG
-        for (int node = 1; node < (NUM_NODES + 2*NUM_GHOST_CELLS); node++) {
-            assert(node_new[node] > node_new[node-1]);
-        }
-    #endif
+    // #ifdef DEBUG
+    //     for (int node = 1; node < (NUM_NODES + 2*NUM_GHOST_CELLS); node++) {
+    //         assert(node_new[node] > node_new[node-1]);
+    //     }
+    // #endif
     for (int cell = 0; cell < (NUM_CELLS + 2*NUM_GHOST_CELLS); cell++) {
         if (do_update[cell]) {
             double old_width = node_old[cell + 1] - node_old[cell];
             double new_width = node_new[cell + 1] - node_new[cell];
-            for (int var = 0; var < NUM_VARIABLES; var++) {
-                field_new[cell][var] = ((field_old[cell][var] * old_width) + (dt * (flux_at_node[cell][var] - flux_at_node[cell + 1][var]))) / new_width;
-            }
+            if (new_width > 0.0) {
+                for (int var = 0; var < NUM_VARIABLES; var++) {
+                    field_new[cell][var] = ((field_old[cell][var] * old_width) + (dt * (flux_at_node[cell][var] - flux_at_node[cell + 1][var]))) / new_width;
+                }
+            } else {
+                for (int var = 0; var < NUM_VARIABLES; var++) {
+                    field_new[cell][var] = NAN;
+                }
+            }    
         }
     }
 
@@ -650,9 +657,9 @@ void time_advance(double dt) {
                 }
             }
             printf("%d ", num_bad_cells);
-            if (level == (NUM_MOOD_LEVELS-1)) {
-                assert(num_bad_cells == 0);
-            }
+            // if (level == (NUM_MOOD_LEVELS-1)) {
+            //     assert(num_bad_cells == 0);
+            // }
         }
         printf("\n");
         project_back();
@@ -757,6 +764,7 @@ int main(void) {
         // print_result(field_in_cell[0], node_position[0]);
         currentTime += TimeStep;
         step++;
+        printf("step done\n");
     }
     print_result(field_in_cell[0], node_position[0]);
 

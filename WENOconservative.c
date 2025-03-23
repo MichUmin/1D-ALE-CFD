@@ -15,13 +15,8 @@ extern double reconstruction_polynomials[NUM_CELLS + 2*NUM_GHOST_CELLS][NUM_VARI
 
 double Matrix[SPACE_ORDER][SPACE_ORDER];
 
-<<<<<<< Updated upstream
-#define EPSILON 0.00001
-#define MY_INF 1.0e20
-=======
 #define EPSILON 0.000001
 #define MY_INFINITY 1e32
->>>>>>> Stashed changes
 
 double square(double x) {
     return x*x;
@@ -212,10 +207,10 @@ void find_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*NUM_GHOS
             Weights[1] = 0.95;
             Weights[2] = 0.025;
         #elif (SPACE_ORDER == 4)
-            Weights[0] = 0.025;
-            Weights[1] = 0.475;
-            Weights[2] = 0.475;
-            Weights[3] = 0.025;
+            Weights[0] = 1.0;
+            Weights[1] = 1000.0;
+            Weights[2] = 1000.0;
+            Weights[3] = 1.0;
         #else
             printf("TBD higher order WENO");
             abort();
@@ -228,36 +223,41 @@ void find_reconstruction_polynomial(IN state field_values[NUM_CELLS + 2*NUM_GHOS
             FindPolynomials(field_values + template_start, node_positions + template_start, main_centre, IntermediatePolynomials[template_num]);
 
             double smoothness_here = 0.0;
+            
             for (int var = 0; var < NUM_VARIABLES; var++) {
                 smoothness_here = max(smoothness_here, SmoothnessIndicator(IntermediatePolynomials[template_num][var], main_width));
             }
             // double smoothness_here = SmoothnessIndicator(IntermediatePolynomials[template_num][NUM_VARIABLES-1], main_width);
-<<<<<<< Updated upstream
-            // printf("smoothness indicator: %f ", smoothness_here);
-            if (smoothness_here > EPSILON)
-            {
-                Weights[template_num] = Weights[template_num] / power(smoothness_here, 8);
-            }
-            else
-            {
-                Weights[template_num] = MY_INF;
-            }
-            
-=======
-            if (smoothness_here != 0.0) {
+            if (smoothness_here > EPSILON) {
                 Weights[template_num] = Weights[template_num] / power(smoothness_here, 4);
             } else {
-                Weights[template_num] = MY_INFINITY;
+                Weights[template_num] = Weights[template_num] * MY_INFINITY;
+                
             }
->>>>>>> Stashed changes
         }
         // printf("\n");
         double weight_sum = 0.0;
+        double infinite_sum = 0.0;
+        int num_infinites = 0;
         for (int template_num = 0; template_num < SPACE_ORDER; template_num++) {
-            weight_sum += Weights[template_num];
+            if (Weights[template_num] != MY_INFINITY) {
+                weight_sum += Weights[template_num];
+            } else {
+                num_infinites++;
+                infinite_sum += (Weights[template_num] / MY_INFINITY);
+            }   
         }
         for (int template_num = 0; template_num < SPACE_ORDER; template_num++) {
-            Weights[template_num] /= weight_sum;
+            if (num_infinites == 0) {
+                Weights[template_num] /= weight_sum;
+            } else {
+                if (Weights[template_num] != MY_INFINITY) {
+                    Weights[template_num] = 0.0;
+                } else {
+                    Weights[template_num] = (Weights[template_num] / MY_INFINITY) / infinite_sum;
+                }
+            }    
+
             // printf("weight: %f ", Weights[template_num]);
             for (int var = 0; var < NUM_VARIABLES; var++) {
                 for (int ord = 0; ord < SPACE_ORDER; ord++) {

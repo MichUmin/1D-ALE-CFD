@@ -15,7 +15,7 @@
 double Tstart, Tend;
 
 #define GAMMA 1.4
-#define CFL 0.1
+#define CFL 0.5
 
 double reconstruction_polynomials[NUM_CELLS + 2*NUM_GHOST_CELLS][NUM_VARIABLES][SPACE_ORDER];
 
@@ -650,7 +650,7 @@ void print_result(state values[NUM_CELLS + 2*NUM_GHOST_CELLS], double points[NUM
 
 int main(void) {
     initialize();
-    print_result(field_in_cell[0], node_position[0]);
+    // print_result(field_in_cell[0], node_position[0]);
     double TimeStep;
     double currentTime = Tstart;
     int step = 1;
@@ -659,7 +659,7 @@ int main(void) {
         if ((currentTime + TimeStep) > Tend) {
             TimeStep = Tend - currentTime;
         }
-        printf("step %d, dt = %lf\n", step, TimeStep);
+        // printf("step %d, dt = %lf\n", step, TimeStep);
         time_advance(TimeStep);
         // printf("Time advancement done in step %d\n", step);
         // print_result(field_in_cell[0], node_position[0]);
